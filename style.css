@@ -216,42 +216,29 @@ td {
   text-align: center;
 }
 
-h4 {
-  position: relative;
-  top: -5px;
-  padding: 8px;
-  width: 95%;
-  background-color: #0582ca;
-  align-self: center;
-  color: #fdfffc;
-  text-align: center;
-  border-radius: 4px 4px 0 0;
+package com.example.yourproject.exception;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import javax.ws.rs.NotSupportedException;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.ext.ExceptionMapper;
+import javax.ws.rs.ext.Provider;
+
+@Provider
+public class UnsupportedMediaTypeExceptionMapper implements ExceptionMapper<NotSupportedException> {
+
+    private static final Logger logger = LoggerFactory.getLogger(UnsupportedMediaTypeExceptionMapper.class);
+
+    @Override
+    public Response toResponse(NotSupportedException exception) {
+        logger.error("415 Unsupported Media Type error encountered: {}", exception.getMessage());
+        logger.debug("Stack trace: ", exception);
+
+        return Response.status(Response.Status.UNSUPPORTED_MEDIA_TYPE)
+                       .type(MediaType.APPLICATION_JSON)
+                       .entity("{\"error\":\"Unsupported Media Type. Please provide the correct Content-Type.\"}")
+                       .build();
+    }
 }
-
-<?xml version="1.0" encoding="UTF-8"?>
-<Configuration status="WARN">
-    <Appenders>
-        <!-- Console Appender Configuration -->
-        <Console name="Console" target="SYSTEM_OUT">
-            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n" />
-        </Console>
-
-        <!-- File Appender Configuration -->
-        <File name="File" fileName="logs/application.log" append="true">
-            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n" />
-        </File>
-    </Appenders>
-
-    <Loggers>
-        <!-- Root Logger Configuration -->
-        <Root level="info">
-            <AppenderRef ref="Console" />
-            <AppenderRef ref="File" />
-        </Root>
-
-        <!-- Optional: Specific Logger Configuration for Your Package -->
-        <Logger name="com.example.yourproject" level="debug" additivity="false">
-            <AppenderRef ref="File"/>
-        </Logger>
-    </Loggers>
-</Configuration>
