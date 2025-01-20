@@ -1,57 +1,94 @@
-package com.example.myapp;
+package com.webencyclop.viper.config;
 
-import javax.ws.rs.*;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
+import com.webencyclop.viper.util.ViperUtils;
+import org.springframework.context.ApplicationContextInitializer;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.PropertySource;
+import org.springframework.stereotype.Component;
 
-@Path("/messages")
-public class MyResource {
-    private static ConcurrentHashMap<Integer, String> messages = new ConcurrentHashMap<>();
-    private static AtomicInteger idCounter = new AtomicInteger();
+import javax.sql.DataSource;
+import java.sql.*;
+import java.util.HashMap;
+import java.util.Map;
 
-    @GET
-    @Produces(MediaType.TEXT_PLAIN)
-    public String getAllMessages() {
-        return messages.toString();
-    }
+/**
+ * This class loads the value from database into the Environment Properties, before application starts
+ *
+ * @Author Ankit Wasankar
+ */
+@Component
+public class DBPropertyLoader implements ApplicationContextInitializer<ConfigurableApplicationContext> {
+    private static final String DB_PROPS_LOADED_PROPERTY_NAME = "IS_DB_PROPS_LOADED";
+    private static final String PROPERTY_SOURCE_NAME = "databaseProperties";
+    private static final String QUERY = "select content_id, property_name, property_value, description, config_type, date_added from vp_config";
+    private static boolean arePropertiesLoadedFromDatabase = false;
 
-    @GET
-    @Path("/{id}")
-    @Produces(MediaType.TEXT_PLAIN)
-    public Response getMessage(@PathParam("id") int id) {
-        String message = messages.get(id);
-        if (message == null) {
-            return Response.status(Response.Status.NOT_FOUND).entity("Message not found").build();
+    @Override
+    public void initialize(ConfigurableApplicationContext applicationContext) {
+        if (!arePropertiesLoadedFromDatabase) {
+            ConfigurableEnvironment configEnv = ((ConfigurableEnvironment) applicationContext.getEnvironment());
+            PropertySource<?> appConfigProp = configEnv.getPropertySources().get("applicationConfig: [classpath:/application.properties]");
+            Map<String, Object> propertySource = getPropertyMapFromDatabase(appConfigProp);
+            applicationContext.getEnvironment().getPropertySources().addLast(new MapPropertySource(PROPERTY_SOURCE_NAME, propertySource));
         }
-        return Response.ok(message, MediaType.TEXT_PLAIN).build();
+        arePropertiesLoadedFromDatabase = true;
     }
 
-    @POST
-    @Consumes(MediaType.TEXT_PLAIN)
-    public Response createMessage(String message) {
-        int id = idCounter.incrementAndGet();
-        messages.put(id, message);
-        return Response.status(Response.Status.CREATED).entity("Message created with ID: " + id).build();
-    }
+    private Map<String, Object> getPropertyMapFromDatabase(PropertySource<?> appConfigProp) {
+        Map<String, Object> propertySource = new HashMap<>();
+        final String url = (String) appConfigProp.getProperty("spring.datasource.url");
+        final String driverClassName = (String) appConfigProp.getProperty("spring.datasource.driver");
+        final String username = (String) appConfigProp.getProperty("spring.datasource.username");
+        final String password = (String) appConfigProp.getProperty("spring.datasource.password");
 
-    @PUT
-    @Path("/{id}")
-    @Consumes(MediaType.TEXT_PLAIN)
-    public Response updateMessage(@PathParam("id") int id, String message) {
-        if (messages.replace(id, message) == null) {
-            return Response.status(Response.Status.NOT_FOUND).entity("Message not found").build();
+        // Now check for database properties
+        DataSource ds = null;
+        Connection connection = null;
+        PreparedStatement preparedStatement = null;
+        ResultSet rs = null;
+        try {
+            if (ViperUtils.isNotBlank(driverClassName)) {
+                Driver driver = (Driver) Class.forName(driverClassName).newInstance();
+                DriverManager.registerDriver(driver);
+            }
+            connection = DriverManager.getConnection(url, username, password);
+            preparedStatement = connection.prepareStatement(QUERY);
+            rs = preparedStatement.executeQuery();
+            // Populate all properties into the property source
+            while (rs.next()) {
+                final String propName = rs.getString("property_name");
+                final String propValue = rs.getString("property_value");
+                propertySource.put(propName, propValue);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e.getMessage(), e);
+        } finally {
+            try {
+                if (rs != null) {
+                    rs.close();
+                }
+            } catch (Exception e) {
+                // supress
+            }
+            try {
+                if (preparedStatement != null) {
+                    preparedStatement.close();
+                }
+            } catch (Exception e) {
+                // supress
+            }
+            try {
+                if (connection != null) {
+                    connection.close();
+                }
+            } catch (Exception e) {
+                // supress
+            }
         }
-        return Response.ok("Message updated").build();
-    }
-
-    @DELETE
-    @Path("/{id}")
-    public Response deleteMessage(@PathParam("id") int id) {
-        if (messages.remove(id) == null) {
-            return Response.status(Response.Status.NOT_FOUND).entity("Message not found").build();
-        }
-        return Response.ok("Message deleted").build();
+        return propertySource;
     }
 }
+
+
